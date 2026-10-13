@@ -6,6 +6,7 @@ export default async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
+    // Handle preflight OPTIONS request
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
     }
@@ -18,23 +19,26 @@ export default async function handler(req, res) {
     }
 
     try {
-        // 3. Determine the target URL based on whether it's a Movie or TV Show
-        // Using vidsrcapi.vercel.app as the primary resolver
+        // 3. Determine the target URL for CinePro resolver
+        // NOTE: If the actual endpoint is different (e.g., cinepro.vercel.app), 
+        // simply update the BASE_URL string below.
+        const BASE_URL = 'https://cinepro.org/api'; 
+        
         let targetUrl = '';
         if (type === 'tv' && season && episode) {
-            targetUrl = `https://vidsrcapi.vercel.app/api/tv/${imdb}/${season}/${episode}`;
+            targetUrl = `${BASE_URL}/tv/${imdb}/${season}/${episode}`;
         } else {
-            targetUrl = `https://vidsrcapi.vercel.app/api/movie/${imdb}`;
+            targetUrl = `${BASE_URL}/movie/${imdb}`;
         }
         
-        console.log(`[Stream API] Attempting to fetch from: ${targetUrl}`);
+        console.log(`[Stream API] Attempting to fetch from CinePro: ${targetUrl}`);
 
         const response = await fetch(targetUrl, {
             method: 'GET',
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'application/json',
-                'Referer': 'https://vidsrcapi.vercel.app/'
+                'Referer': 'https://cinepro.org/'
             }
         });
 
@@ -59,7 +63,7 @@ export default async function handler(req, res) {
         const data = await response.json();
         console.log(`[Stream API] Success! Raw Data:`, JSON.stringify(data));
 
-        // 6. Extract the stream URL (check common structures for vidsrcapi)
+        // 6. Extract the stream URL (check common structures for CinePro/vidsrc resolvers)
         let streamUrl = null;
         
         // Structure A: { result: { url: "..." } } or { result: { sources: [{ file: "..." }] } }
@@ -77,6 +81,10 @@ export default async function handler(req, res) {
         // Structure C: { sources: [{ file: "..." }] }
         else if (data.sources && data.sources.length > 0) {
             streamUrl = data.sources[0].file || data.sources[0].url;
+        }
+        // Structure D: { data: { url: "..." } }
+        else if (data.data && data.data.url) {
+            streamUrl = data.data.url;
         }
 
         // 7. Return the extracted URL or an error
@@ -104,7 +112,7 @@ export default async function handler(req, res) {
         return res.status(500).json({ 
             error: "Scraper execution failed", 
             details: error.message,
-            hint: "Check the Vercel logs above. The target API might be temporarily down."
+            hint: "Check the Vercel logs above. The target API might be temporarily down or blocking Vercel IPs."
         });
     }
 }
