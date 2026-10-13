@@ -16,10 +16,10 @@ export default async function handler(req, res) {
     }
 
     try {
-        // ⚠️ CRITICAL: You MUST replace this with the ACTUAL API endpoint of your resolver.
-        // The previous example was a malformed placeholder which caused the "fetch failed" error.
-        // Example of a valid format: `https://your-resolver-domain.com/api/movie/${imdb}`
-        const targetUrl = `https://vidsrc.xyz/api/source/${imdb}`; 
+        // ⚠️ CRITICAL: The previous URL was a broken placeholder. 
+        // You MUST replace the domain below with the ACTUAL, working endpoint of your chosen resolver.
+        // Example: `https://your-actual-resolver-api.com/api/movie/${imdb}`
+        const targetUrl = `https://api.example-resolver.com/v1/movie/${imdb}`;
         
         console.log(`[Stream Resolver] Attempting to fetch: ${targetUrl}`);
 
@@ -28,7 +28,7 @@ export default async function handler(req, res) {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'application/json',
-                'Referer': 'https://vidsrc.xyz/'
+                'Referer': 'https://google.com/'
             }
         });
 
@@ -47,11 +47,11 @@ export default async function handler(req, res) {
         }
 
     } catch (error) {
-        console.error("[Stream Resolver] Fetch Failed:", error.message, error.cause);
+        console.error("[Stream Resolver] Fetch Failed:", error.message);
         return res.status(500).json({ 
             error: "Scraper execution failed", 
             details: error.message,
-            hint: "Check the Vercel logs above to see the exact URL that failed."
+            hint: "The target URL is likely a broken placeholder, dead, or blocking Vercel's IP addresses."
         });
     }
 }
