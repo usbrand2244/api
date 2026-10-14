@@ -16,19 +16,19 @@ export default async function handler(req, res) {
     }
 
     try {
-        // 2. Construct the target embed URL
+        // 2. Construct the target Vidcore embed URL
         let targetUrl = '';
         if (type === 'tv' && season && episode) {
-            targetUrl = `https://vidlink.pro/tv/${id}/${season}/${episode}`;
+            targetUrl = `https://vidcore.org/embed/tv/${id}/${season}/${episode}`;
         } else {
-            targetUrl = `https://vidlink.pro/movie/${id}`;
+            targetUrl = `https://vidcore.org/embed/movie/${id}`;
         }
 
-        console.log(`[Backend] Target URL: ${targetUrl}`);
+        console.log(`[Backend] Target Vidcore URL: ${targetUrl}`);
 
         // 3. ScrapingBee API Configuration
-        // render_js=true ensures Cloudflare is bypassed and JavaScript executes, 
-        // revealing hidden .m3u8 links in the rendered DOM.
+        // render_js=true is CRITICAL here. It forces ScrapingBee to execute 
+        // Vidcore's JavaScript, which reveals the hidden .m3u8 link in the DOM.
         const scrapingBeeApiKey = '50RWEEP8FSOT8W7004CGLZCCLXHV55F7PVX77WQV588YBVQ8OVLFQMSA50V1XFHOFNBUZK8LRI7S7HBC';
         const proxyUrl = `https://app.scrapingbee.com/api/v1/?api_key=${scrapingBeeApiKey}&url=${encodeURIComponent(targetUrl)}&render_js=true`;
 
@@ -48,7 +48,7 @@ export default async function handler(req, res) {
         const html = await response.text();
         console.log(`[Backend] Successfully fetched HTML. Length: ${html.length} characters`);
 
-        // 4. Extract the .m3u8 URL using a broad, reliable Regex
+        // 4. Extract the .m3u8 URL using a robust Regex
         // This catches ANY http/https link containing '.m3u8' in the rendered HTML
         const m3u8Regex = /(https?:\/\/[^\s"']+\.m3u8(?:\?[^\s"']*)?)/gi;
         const matches = [...html.matchAll(m3u8Regex)];
@@ -68,7 +68,7 @@ export default async function handler(req, res) {
             });
         }
 
-        // 5. Fallback: If regex fails, return the original embed URL
+        // 5. Fallback: If regex fails, return the original Vidcore embed URL
         console.warn(`[Backend] No .m3u8 found in rendered HTML. Falling back to iframe.`);
         return res.status(200).json({
             success: true,
@@ -82,8 +82,8 @@ export default async function handler(req, res) {
         
         // Ultimate fallback to ensure the site never breaks
         const fallbackUrl = (type === 'tv' && season && episode) 
-            ? `https://vidlink.pro/tv/${id}/${season}/${episode}`
-            : `https://vidlink.pro/movie/${id}`;
+            ? `https://vidcore.org/embed/tv/${id}/${season}/${episode}`
+            : `https://vidcore.org/embed/movie/${id}`;
 
         return res.status(200).json({
             success: true,
