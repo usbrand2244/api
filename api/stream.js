@@ -11,8 +11,7 @@ export default async function handler(req, res) {
         return res.status(200).end();
     }
 
-    // 2. Get parameters from the query
-    // Note: vidcore uses TMDB IDs (like 533535), but we'll accept whatever ID is passed
+    // 2. Get parameters from the query (supports both TMDB and IMDb IDs)
     const { id, type, season, episode } = req.query;
     
     if (!id) {
@@ -20,7 +19,7 @@ export default async function handler(req, res) {
     }
 
     try {
-        // 3. Construct the vidcore.org embed URL
+        // 3. Construct the target embed URL (e.g., vidcore.org)
         const mediaType = type === 'tv' ? 'tv' : 'movie';
         let embedUrl = `https://vidcore.org/embed/${mediaType}/${id}`;
         
@@ -28,9 +27,9 @@ export default async function handler(req, res) {
             embedUrl = `https://vidcore.org/embed/tv/${id}/${season}/${episode}`;
         }
 
-        console.log(`[Backend] Fetching vidcore embed page: ${embedUrl}`);
+        console.log(`[Stream Grabber] Fetching embed page: ${embedUrl}`);
 
-        // 4. Fetch the HTML page with browser-like headers to bypass basic bot protection
+        // 4. Fetch the raw HTML of the embed page with browser-like headers
         const response = await fetch(embedUrl, {
             method: 'GET',
             headers: {
@@ -40,7 +39,7 @@ export default async function handler(req, res) {
                 'Referer': 'https://vidcore.org/',
                 'Origin': 'https://vidcore.org'
             },
-            signal: AbortSignal.timeout(8000) // 8 second timeout
+            signal: AbortSignal.timeout(8000) // 8-second timeout to prevent Vercel hanging
         });
 
         if (!response.ok) {
@@ -49,42 +48,41 @@ export default async function handler(req, res) {
 
         const html = await response.text();
 
-        // 5. Extract the .m3u8 URL from the HTML using Regex
-        // This looks for common patterns like: file: "https://...m3u8" or src="https://...m3u8"
-        const m3u8Regex = /(?:file|src)\s*:\s*["'](https[^"']+\.m3u8[^"']*)["']|<source\s+[^>]*src=["'](https[^"']+\.m3u8[^"']*)["']/i;
-        const match = html.match(m3u8Regex);
+        // 5. GRAB THE .m3u8 LINK: Regex to find HLS streams in the HTML/JS source
+        // Matches patterns like: file: "https://...m3u8", src: "https://...m3u8", or hls: "https://...m3u8"
+        const m3u8Regex = /(?:file|src|hls|source)\s*[:=]\s*["'](https[^"']+\.m3u8[^"']*)["']/gi;
+        const matches = [...html.matchAll(m3u8Regex)];
 
         let streamUrl = null;
 
-        if (match) {
-            // The regex has two capture groups, we take the one that matched
-            streamUrl = match[1] || match[2];
-            console.log(`[Backend] SUCCESS! Extracted .m3u8: ${streamUrl}`);
+        if (matches.length > 0) {
+            // Extract the first valid .m3u8 link found
+            streamUrl = matches[0][1];
+            console.log(`[Stream Grabber] SUCCESS! Extracted .m3u8: ${streamUrl}`);
             
             return res.status(200).json({
                 success: true,
                 id: id,
-                type: 'hls',
+                type: 'hls', // Tells frontend to use Plyr + HLS.js
                 url: streamUrl,
-                message: "Direct .m3u8 stream extracted successfully."
+                message: "Direct .m3u8 stream extracted successfully from page source."
             });
         }
 
-        // 6. FALLBACK: If .m3u8 extraction fails, return the embed URL
-        // This ensures your frontend can still load the movie via iframe if the scraper fails
-        console.warn(`[Backend] Could not extract .m3u8. Falling back to embed URL.`);
+        // 6. FALLBACK: If regex fails (link is obfuscated via JS), return the embed URL
+        console.warn(`[Stream Grabber] Could not extract .m3u8 via regex. Falling back to iframe.`);
         return res.status(200).json({
             success: true,
             id: id,
-            type: 'iframe',
+            type: 'iframe', // Tells frontend to load an iframe instead
             url: embedUrl,
-            message: "Direct .m3u8 not found in page source. Falling back to embed player."
+            message: "Direct .m3u8 not found in page source (likely obfuscated). Falling back to embed player."
         });
 
     } catch (error) {
-        console.error("[Backend] Fatal Error:", error.message);
+        console.error("[Stream Grabber] Fatal Error:", error.message);
         
-        // Ultimate fallback: return the embed URL so the user can still watch
+        // 7. ULTIMATE FALLBACK: Prevent frontend breakage even if the fetch completely fails
         const mediaType = type === 'tv' ? 'tv' : 'movie';
         const fallbackUrl = (mediaType === 'tv' && season && episode) 
             ? `https://vidcore.org/embed/tv/${id}/${season}/${episode}`
