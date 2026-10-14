@@ -1,6 +1,6 @@
 {
-  "name": "movixohub-stream-resolver",
-  "version": "1.0.0",
-  "description": "Vercel serverless function to resolve .m3u8 streams",
-  "main": "api/stream.js"
+  "dependencies": {
+    "@sparticuz/chromium": "^122.0.0",
+    "puppeteer-core": "^22.0.0"
+  }
 }
