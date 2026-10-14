@@ -1,6 +1,4 @@
 // api/stream.js
-import chromium from '@sparticuz/chromium';
-import puppeteer from 'puppeteer-core';
 
 export default async function handler(req, res) {
     // 1. Enable CORS
@@ -19,63 +17,65 @@ export default async function handler(req, res) {
 
     try {
         // 2. Construct the target embed URL
-        let embedUrl = '';
+        let targetUrl = '';
         if (type === 'tv' && season && episode) {
-            embedUrl = `https://vidlink.pro/tv/${id}/${season}/${episode}`;
+            targetUrl = `https://vidlink.pro/tv/${id}/${season}/${episode}`;
         } else {
-            embedUrl = `https://vidlink.pro/movie/${id}`;
+            targetUrl = `https://vidlink.pro/movie/${id}`;
         }
 
-        console.log(`[Backend] Launching headless browser for: ${embedUrl}`);
+        console.log(`[Backend] Target URL: ${targetUrl}`);
 
-        // 3. Launch Puppeteer with @sparticuz/chromium for Vercel Serverless
-        const browser = await puppeteer.launch({
-            args: chromium.args,
-            defaultViewport: chromium.defaultViewport,
-            executablePath: await chromium.executablePath(),
-            headless: chromium.headless,
-            ignoreHTTPSErrors: true,
+        // 3. ScrapingBee API Configuration
+        // render_js=true ensures Cloudflare is bypassed and JavaScript executes, 
+        // revealing hidden .m3u8 links in the rendered DOM.
+        const scrapingBeeApiKey = '50RWEEP8FSOT8W7004CGLZCCLXHV55F7PVX77WQV588YBVQ8OVLFQMSA50V1XFHOFNBUZK8LRI7S7HBC';
+        const proxyUrl = `https://app.scrapingbee.com/api/v1/?api_key=${scrapingBeeApiKey}&url=${encodeURIComponent(targetUrl)}&render_js=true`;
+
+        console.log(`[Backend] Fetching via ScrapingBee...`);
+
+        const response = await fetch(proxyUrl, {
+            method: 'GET',
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
         });
 
-        const page = await browser.newPage();
+        if (!response.ok) {
+            throw new Error(`ScrapingBee API returned status: ${response.status}`);
+        }
+
+        const html = await response.text();
+        console.log(`[Backend] Successfully fetched HTML. Length: ${html.length} characters`);
+
+        // 4. Extract the .m3u8 URL using a broad, reliable Regex
+        // This catches ANY http/https link containing '.m3u8' in the rendered HTML
+        const m3u8Regex = /(https?:\/\/[^\s"']+\.m3u8(?:\?[^\s"']*)?)/gi;
+        const matches = [...html.matchAll(m3u8Regex)];
+
         let streamUrl = null;
 
-        // 4. Intercept all network traffic looking for the .m3u8 video file
-        await page.setRequestInterception(true);
-        page.on('request', request => {
-            const url = request.url();
-            if (url.toLowerCase().includes('.m3u8')) {
-                streamUrl = url;
-            }
-            request.continue(); // Must continue all requests to avoid hanging
-        });
-
-        // 5. Navigate and wait for network to be idle (10s timeout for Vercel limits)
-        await page.goto(embedUrl, { 
-            waitUntil: 'networkidle2',
-            timeout: 10000 
-        });
-
-        await browser.close();
-
-        // 6. Return the result
-        if (streamUrl) {
-            console.log(`[Backend] SUCCESS! Found .m3u8: ${streamUrl}`);
+        if (matches.length > 0) {
+            // Get the first valid .m3u8 link found
+            streamUrl = matches[0][1];
+            console.log(`[Backend] SUCCESS! Extracted .m3u8: ${streamUrl}`);
+            
             return res.status(200).json({
                 success: true,
                 id: id,
-                type: 'hls', // Tells frontend to use HLS.js
+                type: 'hls',
                 url: streamUrl
             });
-        } else {
-            console.warn(`[Backend] No .m3u8 found. Falling back to iframe.`);
-            return res.status(200).json({
-                success: true,
-                id: id,
-                type: 'iframe', // Tells frontend to use iframe fallback
-                url: embedUrl
-            });
         }
+
+        // 5. Fallback: If regex fails, return the original embed URL
+        console.warn(`[Backend] No .m3u8 found in rendered HTML. Falling back to iframe.`);
+        return res.status(200).json({
+            success: true,
+            id: id,
+            type: 'iframe',
+            url: targetUrl
+        });
 
     } catch (error) {
         console.error("[Backend] Fatal Error:", error.message);
